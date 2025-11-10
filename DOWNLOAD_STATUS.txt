@@ -1,0 +1,41 @@
+========================================
+Model Files Download Status
+========================================
+
+[OK]  Text/model/deepmoji_weights.hdf5 - ALREADY DOWNLOADED
+
+[PENDING] Text/sentiment/finetuned/twitter_ss.hdf5
+[PENDING] Text/sentiment/finetuned/youtube_ss.hdf5
+[PENDING] Image/c3d_sentiment.hdf5
+
+========================================
+To download remaining files:
+========================================
+
+Option 1: Double-click open_downloads.bat to open all links
+
+Option 2: Download manually from these links:
+
+1. Twitter Model:
+   https://drive.google.com/open?id=1ZLD2iSgl4PggYPAG9iG_eoFx2DEegqSL
+   Save to: Text\sentiment\finetuned\twitter_ss.hdf5
+
+2. YouTube Model:
+   https://drive.google.com/open?id=1iWc0sUmk7FwXBFPQ8FOIWKhJ8jS2iplh
+   Save to: Text\sentiment\finetuned\youtube_ss.hdf5
+
+3. C3D Model:
+   https://drive.google.com/open?id=1UeEsQYrItUF0NOpD1frvS8qxdqGCUTg9
+   Save to: Image\c3d_sentiment.hdf5
+
+========================================
+Instructions:
+========================================
+1. Click each link above
+2. Click the download button in Google Drive
+3. If you see a virus scan warning, click "Download anyway"
+4. Save each file to the exact location shown above
+5. File names must match exactly (case-sensitive)
+
+See DOWNLOAD_INSTRUCTIONS.md for detailed help.
+
