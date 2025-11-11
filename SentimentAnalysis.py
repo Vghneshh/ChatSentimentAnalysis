@@ -103,6 +103,64 @@ def calculate_scores(emojis_list, images_list, texts_list):
     return sentiment_scores
 
 
+def _has_positive_emoji(emoji_tokens):
+    """Heuristic: does the emoji token list contain clearly positive emojis?"""
+    if not emoji_tokens:
+        return False
+    positive = set(list("😁😀😊🙂😃😄😆😎😍🤗👍🎉❤️💕💖✨🥳😺😸"))
+    try:
+        # Handle both list of emojis and single emoji string
+        if isinstance(emoji_tokens, str):
+            emoji_tokens = [emoji_tokens]
+        return any((e in positive) for e in emoji_tokens)
+    except Exception:
+        return False
+
+
+def _has_soft_negation(text):
+    """Detect patterns like 'not (that|so|really) sad|upset|angry|depressed|unhappy|down|bad'"""
+    if not text:
+        return False
+    # Widened pattern: allow optional modifiers and match negative keywords anywhere in phrase
+    pattern = re.compile(r"\bnot\s+(?:that\s+|so\s+|really\s+|very\s+|too\s+)?(sad|upset|depressed|angry|mad|unhappy|down|bad)",
+                         re.IGNORECASE)
+    return bool(pattern.search(text))
+
+
+def _postprocess_smoothing(initial_scores, original_texts, original_emojis):
+    """Apply light post-processing: if score is moderately negative but text has a soft negation
+    (e.g., 'not that sad') and emojis are positive, pull score toward neutral.
+
+    This is a conservative adjustment to reduce false negatives on mild-negated phrases.
+    """
+    if not initial_scores:
+        return initial_scores
+
+    smoothed = list(initial_scores)
+    for i, score in enumerate(initial_scores):
+        try:
+            if score is None:
+                continue
+            # Only adjust moderate negatives
+            if -0.6 < score < -0.05:
+                text = original_texts[i] if i < len(original_texts) else None
+                emojis = original_emojis[i] if i < len(original_emojis) else None
+                
+                has_negation = _has_soft_negation(text)
+                has_pos_emoji = _has_positive_emoji(emojis)
+                
+                if has_negation and has_pos_emoji:
+                    # Pull toward neutral: shrink magnitude and add a small positive bias
+                    adjusted = (score * 0.4) + 0.1
+                    # Clamp to [-1, 1]
+                    adjusted = max(-1.0, min(1.0, adjusted))
+                    smoothed[i] = adjusted
+        except Exception:
+            # On any unexpected issue, keep original score
+            pass
+    return smoothed
+
+
 def get_sentiments(sentences, image_model, text_model_ensemble):
     """
 
@@ -112,6 +170,11 @@ def get_sentiments(sentences, image_model, text_model_ensemble):
     :return:
     """
     emojis_list, images_list, texts_list = parse_media(sentences)
+
+    # Preserve originals for post-processing rules (deep copy to avoid overwrite)
+    import copy
+    original_emojis = copy.deepcopy(emojis_list)
+    original_texts = copy.deepcopy(texts_list)
 
     # get indexes of entries that are not None
     emojis_indexes = [i for i in range(len(emojis_list)) if emojis_list[i] is not None]
@@ -145,4 +208,8 @@ def get_sentiments(sentences, image_model, text_model_ensemble):
     for i in range(len(clean_texts_sentiment)):
         texts_list[texts_indexes[i]] = clean_texts_sentiment[i]
 
-    return calculate_scores(emojis_list, images_list, texts_list)
+    initial_scores = calculate_scores(emojis_list, images_list, texts_list)
+
+    # Apply light rule-based smoothing for soft negation + positive emoji cases
+    final_scores = _postprocess_smoothing(initial_scores, original_texts, original_emojis)
+    return final_scores
