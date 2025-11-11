@@ -117,6 +117,16 @@ def _has_positive_emoji(emoji_tokens):
         return False
 
 
+def _has_sad_keywords(text):
+    """Detect if text contains strong negative/sad keywords"""
+    if not text:
+        return False
+    # Match sad keywords (without negation)
+    pattern = re.compile(r"\b(sad|depressed|upset|miserable|unhappy|crying|devastated|heartbroken|awful|terrible|horrible)\b",
+                         re.IGNORECASE)
+    return bool(pattern.search(text))
+
+
 def _has_soft_negation(text):
     """Detect patterns like 'not (that|so|really) sad|upset|angry|depressed|unhappy|down|bad'"""
     if not text:
@@ -128,10 +138,13 @@ def _has_soft_negation(text):
 
 
 def _postprocess_smoothing(initial_scores, original_texts, original_emojis):
-    """Apply light post-processing: if score is moderately negative but text has a soft negation
-    (e.g., 'not that sad') and emojis are positive, pull score toward neutral.
-
-    This is a conservative adjustment to reduce false negatives on mild-negated phrases.
+    """Apply light post-processing: handle emoji-text conflicts and soft negation.
+    
+    Rules:
+    1. If happy emoji + sad text (conflicting sentiment) → neutral
+    2. If moderate negative + soft negation + positive emoji → pull toward neutral
+    
+    This reduces false negatives on ambiguous inputs.
     """
     if not initial_scores:
         return initial_scores
@@ -141,14 +154,21 @@ def _postprocess_smoothing(initial_scores, original_texts, original_emojis):
         try:
             if score is None:
                 continue
-            # Only adjust moderate negatives
+                
+            text = original_texts[i] if i < len(original_texts) else None
+            emojis = original_emojis[i] if i < len(original_emojis) else None
+            
+            has_pos_emoji = _has_positive_emoji(emojis)
+            has_sad_text = _has_sad_keywords(text)
+            has_negation = _has_soft_negation(text)
+            
+            # Rule 1: Emoji-text conflict (happy emoji + sad text without negation) → neutral
+            if has_pos_emoji and has_sad_text and not has_negation:
+                smoothed[i] = 0.0
+                continue
+            
+            # Rule 2: Soft negation smoothing (moderate negative + negation + positive emoji)
             if -0.6 < score < -0.05:
-                text = original_texts[i] if i < len(original_texts) else None
-                emojis = original_emojis[i] if i < len(original_emojis) else None
-                
-                has_negation = _has_soft_negation(text)
-                has_pos_emoji = _has_positive_emoji(emojis)
-                
                 if has_negation and has_pos_emoji:
                     # Pull toward neutral: shrink magnitude and add a small positive bias
                     adjusted = (score * 0.4) + 0.1
