@@ -117,6 +117,22 @@ def _has_positive_emoji(emoji_tokens):
         return False
 
 
+def _has_laugh_emoji(emoji_tokens):
+    """Detect presence of explicit laughing emojis for sarcasm handling.
+
+    Examples include: 😂, 🤣, 😆, 😹. Works with a list or single emoji string.
+    """
+    if not emoji_tokens:
+        return False
+    laughs = set(list("😂🤣😆😹"))
+    try:
+        if isinstance(emoji_tokens, str):
+            emoji_tokens = [emoji_tokens]
+        return any((e in laughs) for e in emoji_tokens)
+    except Exception:
+        return False
+
+
 def _has_sad_keywords(text):
     """Detect if text contains strong negative/sad keywords"""
     if not text:
@@ -137,10 +153,31 @@ def _has_soft_negation(text):
     return bool(pattern.search(text))
 
 
+def _has_positive_keywords(text):
+    """Detect clearly positive lexical indicators for lightweight boosting when model output is near neutral.
+    Applied only if no conflicting strong negative words.
+    """
+    if not text:
+        return False
+    pattern = re.compile(r"\b(happy|love|loving|awesome|great|fantastic|amazing|wonderful|excellent|glad|joyful|excited|thrilled|yay)\b",
+                         re.IGNORECASE)
+    return bool(pattern.search(text))
+
+
+def _has_negative_keywords(text):
+    if not text:
+        return False
+    # Expanded to include "dying/dieing" and other common negative terms
+    pattern = re.compile(r"\b(sad|upset|angry|hate|terrible|awful|bad|miserable|depressed|heartbroken|worst|dying|dieing|kill|dead|hurt|pain|sucks?)\b",
+                         re.IGNORECASE)
+    return bool(pattern.search(text))
+
+
 def _postprocess_smoothing(initial_scores, original_texts, original_emojis):
     """Apply light post-processing: handle emoji-text conflicts and soft negation.
     
     Rules:
+    0. If laughing emoji + negative text → neutral (sarcasm)
     1. If happy emoji + sad text (conflicting sentiment) → neutral
     2. If moderate negative + soft negation + positive emoji → pull toward neutral
     
@@ -159,8 +196,17 @@ def _postprocess_smoothing(initial_scores, original_texts, original_emojis):
             emojis = original_emojis[i] if i < len(original_emojis) else None
             
             has_pos_emoji = _has_positive_emoji(emojis)
+            has_laugh = _has_laugh_emoji(emojis)
             has_sad_text = _has_sad_keywords(text)
             has_negation = _has_soft_negation(text)
+            has_positive_words = _has_positive_keywords(text)
+            has_negative_words = _has_negative_keywords(text)
+            
+            # Rule 0: Explicit sarcasm handling for laughing emoji + negative text → neutral
+            # Trigger when a laughing emoji appears alongside clear negative indicators in text.
+            if has_laugh and (has_negative_words or has_sad_text):
+                smoothed[i] = 0.0
+                continue
             
             # Rule 1: Emoji-text conflict (happy emoji + sad text without negation) → neutral
             if has_pos_emoji and has_sad_text and not has_negation:
@@ -175,6 +221,14 @@ def _postprocess_smoothing(initial_scores, original_texts, original_emojis):
                     # Clamp to [-1, 1]
                     adjusted = max(-1.0, min(1.0, adjusted))
                     smoothed[i] = adjusted
+                    continue
+
+            # Rule 3: Positive lexical boosting. If model produced near-neutral score but text has clear
+            # positive keywords (and not strong negative) boost upward so obvious positives aren't lost.
+            if -0.15 <= score <= 0.15 and has_positive_words and not has_negative_words:
+                boosted = score + 0.45  # push into positive region
+                boosted = max(-1.0, min(1.0, boosted))
+                smoothed[i] = boosted
         except Exception:
             # On any unexpected issue, keep original score
             pass
@@ -233,3 +287,83 @@ def get_sentiments(sentences, image_model, text_model_ensemble):
     # Apply light rule-based smoothing for soft negation + positive emoji cases
     final_scores = _postprocess_smoothing(initial_scores, original_texts, original_emojis)
     return final_scores
+
+
+def get_sentiments_with_components(sentences, image_model, text_model_ensemble):
+    """Extended analysis returning component scores alongside fused + label.
+
+    Each returned item is a dict:
+        {
+          'text': original_text (with emojis removed and <img> tag stripped),
+          'raw_text': original full sentence,
+          'emoji_score': float|None,
+          'text_score': float|None,
+          'image_score': float|None,
+          'combined_score': float|None,
+          'label': 'Positive'|'Neutral'|'Negative'
+        }
+    """
+    emojis_list, images_list, texts_list = parse_media(sentences)
+    import copy
+    original_emojis = copy.deepcopy(emojis_list)
+    original_texts = copy.deepcopy(texts_list)
+
+    emojis_indexes = [i for i in range(len(emojis_list)) if emojis_list[i] is not None]
+    images_indexes = [i for i in range(len(images_list)) if images_list[i] is not None]
+    texts_indexes = [i for i in range(len(texts_list)) if texts_list[i] is not None]
+
+    clean_emojis_list = [emojis_list[i] for i in emojis_indexes]
+    clean_images_list = [images_list[i] for i in images_indexes]
+    clean_texts_list = [texts_list[i] for i in texts_indexes]
+
+    clean_emojis_sentiment = get_emoji_sentiments(clean_emojis_list)
+    if clean_images_list and image_model is not None:
+        image_paths = download_gifs(clean_images_list, path="downloads")
+        if image_paths:
+            clean_images_sentiment = get_gifs_sentiment(image_paths, image_model)
+        else:
+            clean_images_sentiment = []
+    else:
+        clean_images_sentiment = []
+    clean_texts_sentiment = get_texts_sentiment(clean_texts_list, text_model_ensemble)
+
+    for i in range(len(clean_emojis_sentiment)):
+        emojis_list[emojis_indexes[i]] = clean_emojis_sentiment[i]
+    for i in range(len(clean_images_sentiment)):
+        images_list[images_indexes[i]] = clean_images_sentiment[i]
+    for i in range(len(clean_texts_sentiment)):
+        texts_list[texts_indexes[i]] = clean_texts_sentiment[i]
+
+    initial_scores = calculate_scores(emojis_list, images_list, texts_list)
+    final_scores = _postprocess_smoothing(initial_scores, original_texts, original_emojis)
+
+    def label(score, thr=0.2):
+        if score is None:
+            return "Neutral"
+        if score > thr:
+            return "Positive"
+        if score < -thr:
+            return "Negative"
+        return "Neutral"
+    
+    def to_native(val):
+        """Convert numpy types to native Python types for JSON serialization"""
+        if val is None:
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return val
+
+    results = []
+    for i in range(len(sentences)):
+        results.append({
+            'text': original_texts[i],
+            'raw_text': sentences[i],
+            'emoji_score': to_native(emojis_list[i]),
+            'text_score': to_native(texts_list[i]),
+            'image_score': to_native(images_list[i]),
+            'combined_score': to_native(final_scores[i]),
+            'label': label(final_scores[i])
+        })
+    return results

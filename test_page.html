@@ -1,0 +1,238 @@
+﻿
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chat Sentiment Analyzer</title>
+  <style>
+    :root {
+      --bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --panel-bg: rgba(255,255,255,0.9);
+      --panel-alt: rgba(240,244,249,0.75);
+      --accent: #667eea;
+      --accent-hover: #5568d3;
+      --accent-soft: #e0e7ff;
+      --border: rgba(217,225,234,0.6);
+      --radius: 16px;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --success: #10b981;
+      --neutral: #f59e0b;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --shadow: 0 8px 32px rgba(31,38,135,0.15);
+      --shadow-lg: 0 20px 60px rgba(31,38,135,0.3);
+      --trans-fast: 0.3s cubic-bezier(0.4,0,0.2,1);
+      --glass-bg: rgba(255,255,255,0.25);
+      --glass-border: rgba(255,255,255,0.18);
+    }
+    body.dark {
+      --bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      --panel-bg: rgba(30,41,59,0.85);
+      --panel-alt: rgba(36,50,74,0.75);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --border: rgba(51,65,85,0.6);
+      --accent: #818cf8;
+      --accent-hover: #6366f1;
+      --accent-soft: rgba(99,102,241,0.2);
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
+      --shadow-lg: 0 20px 60px rgba(0,0,0,0.6);
+      --glass-bg: rgba(30,41,59,0.4);
+      --glass-border: rgba(255,255,255,0.1);
+    }
+    * { box-sizing: border-box; margin:0; padding:0; }
+    @keyframes gradient { 0%{background-position:0% 50%;} 50%{background-position:100% 50%;} 100%{background-position:0% 50%;} }
+    @keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);} }
+    @keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+    @keyframes slideUp { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:translateY(0);} }
+    @keyframes shimmer { 0%{background-position:-1000px 0;} 100%{background-position:1000px 0;} }
+    body { min-height:100vh; font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var(--bg); background-size:400% 400%; animation:gradient 15s ease infinite; color:var(--text); -webkit-font-smoothing:antialiased; }
+    header { padding:1.5rem 2.5rem; display:flex; align-items:center; justify-content:space-between; background:var(--glass-bg); backdrop-filter:blur(20px) saturate(180%); border-bottom:1px solid var(--glass-border); box-shadow:var(--shadow); position:sticky; top:0; z-index:100; }
+    header h1 { font-size:1.4rem; font-weight:700; letter-spacing:.5px; display:flex; align-items:center; gap:.6rem; background:linear-gradient(90deg,#667eea,#764ba2); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; animation:float 3s ease-in-out infinite; }
+    header .actions { display:flex; gap:.85rem; align-items:center; }
+    button, .tab { cursor:pointer; user-select:none; }
+    .btn { background:linear-gradient(135deg,var(--accent),#764ba2); color:#fff; border:none; padding:.75rem 1.2rem; font-size:.95rem; font-weight:600; border-radius:var(--radius); display:inline-flex; align-items:center; gap:.5rem; box-shadow:var(--shadow); transition:all var(--trans-fast); position:relative; overflow:hidden; }
+    .btn::before { content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent); transition:left 0.5s; }
+    .btn:hover::before { left:100%; }
+    .btn:hover { transform:translateY(-2px); box-shadow:var(--shadow-lg); }
+    .btn:active { transform:translateY(0); }
+    .btn.secondary { background:var(--glass-bg); color:var(--text); backdrop-filter:blur(10px); border:1px solid var(--glass-border); box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+    .btn.secondary:hover { background:var(--accent-soft); border-color:var(--accent); }
+    .layout { max-width:1120px; margin:2rem auto 3rem; padding:0 1.5rem; }
+    .tabs { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+    .tab { background:var(--glass-bg); backdrop-filter:blur(10px); padding:.65rem 1.1rem; border-radius:var(--radius); font-size:.88rem; font-weight:600; border:1px solid var(--glass-border); color:var(--text); transition:all var(--trans-fast); }
+    .tab:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+    .tab.active { background:linear-gradient(135deg,var(--accent),#764ba2); color:#fff; box-shadow:var(--shadow); border-color:transparent; }
+    .panel { background:var(--glass-bg); backdrop-filter:blur(20px) saturate(180%); padding:1.5rem 1.5rem 1.7rem; border:1px solid var(--glass-border); border-radius:var(--radius); box-shadow:var(--shadow); position:relative; animation:slideUp 0.4s ease; }
+    .panel::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,#667eea,#764ba2,#f093fb); border-radius:var(--radius) var(--radius) 0 0; }
+    .panel h3 { margin-top:0; margin-bottom:.8rem; font-size:1.15rem; font-weight:700; background:linear-gradient(90deg,var(--accent),#764ba2); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    textarea { width:100%; min-height:150px; resize:vertical; padding:.85rem 1rem; font-size:1rem; font-family:inherit; border:2px solid var(--border); border-radius:var(--radius); background:var(--panel-alt); backdrop-filter:blur(10px); color:var(--text); line-height:1.5; transition:all var(--trans-fast); }
+    textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); transform:translateY(-1px); }
+    .small { font-size:.8rem; color:var(--muted); }
+    .result { margin-top:1.2rem; border-radius:var(--radius); padding:1.3rem 1.4rem; display:flex; flex-direction:column; gap:.5rem; border:2px solid var(--border); background:var(--glass-bg); backdrop-filter:blur(10px); animation:slideUp 0.5s ease, pulse 2s ease-in-out infinite; box-shadow:var(--shadow); }
+    .result[data-label="Positive"] { border-color:var(--success); background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(16,185,129,0.05)); }
+    .result[data-label="Negative"] { border-color:var(--danger); background:linear-gradient(135deg,rgba(239,68,68,0.1),rgba(239,68,68,0.05)); }
+    .result[data-label="Neutral"] { border-color:var(--neutral); background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(245,158,11,0.05)); }
+    .sentiment-chip { display:inline-flex; align-items:center; gap:.4rem; font-weight:700; font-size:.9rem; padding:.45rem .75rem; border-radius:999px; box-shadow:0 2px 8px rgba(0,0,0,0.15); animation:slideUp 0.6s ease; }
+    .chip-pos { background:linear-gradient(135deg,#10b981,#059669); color:#fff; }
+    .chip-neg { background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; }
+    .chip-neu { background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; }
+    table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    thead th { text-transform:uppercase; font-weight:700; font-size:.7rem; letter-spacing:.6px; padding:.65rem .65rem; background:var(--panel-alt); position:sticky; top:0; backdrop-filter:blur(10px); }
+    tbody td { padding:.65rem .65rem; border-top:1px solid var(--border); vertical-align:top; }
+    tbody tr { transition:background var(--trans-fast); }
+    tbody tr:hover { background:var(--accent-soft); }
+    tbody tr:nth-child(even) { background:var(--panel-alt); }
+    .history-scroll { max-height:340px; overflow:auto; border:2px solid var(--border); border-radius:var(--radius); box-shadow:inset 0 2px 8px rgba(0,0,0,0.1); }
+    .example-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:1.2rem; margin-top:1rem; }
+    .example-card { background:var(--glass-bg); backdrop-filter:blur(10px); border:2px solid var(--glass-border); padding:.85rem .9rem 1rem; border-radius:var(--radius); display:flex; flex-direction:column; gap:.5rem; font-size:.78rem; position:relative; transition:all var(--trans-fast); box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+    .example-card::before { content:''; position:absolute; top:0; left:0; right:0; bottom:0; border-radius:var(--radius); background:linear-gradient(135deg,transparent,rgba(102,126,234,0.1)); opacity:0; transition:opacity var(--trans-fast); }
+    .example-card:hover { transform:translateY(-4px) scale(1.02); box-shadow:var(--shadow-lg); border-color:var(--accent); }
+    .example-card:hover::before { opacity:1; }
+    .example-card code { font-size:.78rem; word-break:break-word; position:relative; z-index:1; }
+    .example-card button { align-self:flex-start; position:relative; z-index:1; }
+    .theme-toggle { background:var(--glass-bg); backdrop-filter:blur(10px); color:var(--text); border:1px solid var(--glass-border); }
+    .theme-toggle:hover { background:var(--accent-soft); border-color:var(--accent); }
+    .spinner { width:20px; height:20px; border:3px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.8s linear infinite; }
+    @keyframes spin { to{transform:rotate(360deg);} }
+    .analyze-actions { display:flex; align-items:center; gap:.9rem; margin-top:1rem; flex-wrap:wrap; }
+    .footer { text-align:center; padding:2rem 0 2.5rem; font-size:.7rem; color:var(--muted); background:var(--glass-bg); backdrop-filter:blur(10px); margin-top:2rem; border-top:1px solid var(--glass-border); }
+    .hidden { display:none!important; }
+    @media (max-width:768px) { header{padding:1.2rem 1.5rem;} .layout{padding:0 1rem;} .tabs{justify-content:space-between;} .example-grid{grid-template-columns:1fr;} }
+  </style>
+  <script>
+    function $(id){ return document.getElementById(id); }
+    
+    // Initialize theme from localStorage on page load
+    window.addEventListener('DOMContentLoaded', function(){
+      const savedTheme = localStorage.getItem('theme');
+      if(savedTheme === 'dark'){
+        document.body.classList.add('dark');
+      }
+    });
+    
+    function showTab(tab){
+      ['analyze','history','examples'].forEach(t => {
+        $('tab_'+t).classList.toggle('active', t===tab);
+        $(t+'Section').style.display = t===tab ? 'block':'none';
+      });
+      if (tab==='history') loadHistory();
+    }
+    
+    function toggleTheme(){ 
+      document.body.classList.toggle('dark');
+      const isDark = document.body.classList.contains('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      // Update button emoji
+      const btn = document.querySelector('.theme-toggle');
+      if(btn) btn.innerHTML = isDark ? '☀️ Light' : '🌓 Theme';
+    }
+    
+    function sentimentIcon(label){
+      switch(label){
+        case 'Positive': return '✅';
+        case 'Negative': return '⚠️';
+        default: return '😐';
+      }
+    }
+    
+    async function analyze(){
+      const text = $('text').value.trim();
+      const btn = $('btnAnalyze');
+      const resDiv = $('result');
+      const spinner = $('spinner');
+      resDiv.className = 'result';
+      resDiv.dataset.label='Neutral';
+      resDiv.innerHTML = '';
+      if(!text){ resDiv.innerHTML = '<div class="small">Enter text first.</div>'; return; }
+      btn.disabled = true; spinner.classList.remove('hidden');
+      try {
+        const res = await fetch('/api/analyze',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ text }) });
+        const data = await res.json();
+        const label = data.label || 'Neutral';
+        const score = (data.score!==undefined && data.score!==null) ? Number(data.score).toFixed(3) : '0.000';
+        resDiv.dataset.label = label;
+        let chipClass = label==='Positive'?'chip-pos':(label==='Negative'?'chip-neg':'chip-neu');
+        resDiv.innerHTML = `<div class="sentiment-chip ${chipClass}">${sentimentIcon(label)} <span>${label}</span></div>
+          <div style="font-size:.75rem;"><strong>Score:</strong> ${score}</div>`;
+        loadHistory();
+      } catch(e){
+        resDiv.dataset.label='Neutral';
+        resDiv.innerHTML = `<div class="sentiment-chip chip-neu">😐 <span>Error</span></div><div class="small">${(e.message||e)}</div>`;
+      } finally {
+        btn.disabled = false; spinner.classList.add('hidden');
+      }
+    }
+    async function loadHistory(){
+      const tbody = $('histBody');
+      tbody.innerHTML='';
+      try {
+        const res = await fetch('/api/history');
+        const data = await res.json();
+        if(!Array.isArray(data) || data.length===0){ $('histNone').style.display='block'; return; }
+        $('histNone').style.display='none';
+        data.forEach(item => {
+          const tr = document.createElement('tr');
+          const score = (item.score!==undefined && item.score!==null)? Number(item.score).toFixed(3):'—';
+          tr.innerHTML = `<td>${escapeHtml(item.input||'')}</td><td>${escapeHtml(item.label||'—')}</td><td>${score}</td>`;
+          tbody.appendChild(tr);
+        });
+      } catch(e){ console.warn('History failed', e); $('histNone').style.display='block'; }
+    }
+    function useExample(text){ $('text').value = text; showTab('analyze'); }
+    function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',''':'&#39;' }[s])); }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>💬 Chat Sentiment Analyzer</h1>
+    <div class="actions">
+      <button class="btn secondary theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌓 Theme</button>
+      <button id="btnAnalyze" class="btn" onclick="analyze()" title="Analyze sentiment">🔍 Analyze</button>
+      <div id="spinner" class="spinner hidden" aria-label="Loading"></div>
+    </div>
+  </header>
+  <main class="layout">
+    <nav class="tabs" aria-label="Primary">
+      <div id="tab_analyze" class="tab active" onclick="showTab('analyze')">Analyze</div>
+      <div id="tab_history" class="tab" onclick="showTab('history')">History</div>
+      <div id="tab_examples" class="tab" onclick="showTab('examples')">Examples</div>
+    </nav>
+    <section id="analyzeSection" class="panel" style="display:block;">
+      <h3>Input</h3>
+      <p class="small">Enter text containing emojis. First run may take several seconds to load models.</p>
+      <label for="text" class="small" style="font-weight:600; letter-spacing:.3px;">Text (emojis allowed)</label>
+      <textarea id="text" placeholder="e.g. Oh great, just what I needed 😂"></textarea>
+      <div class="analyze-actions">
+        <div class="small">Press Analyze or choose an example.</div>
+      </div>
+      <div id="result" class="result" data-label="Neutral"></div>
+    </section>
+    <section id="historySection" class="panel" style="display:none;">
+      <h3>Recent Analyses</h3>
+      <div id="histNone" class="small" style="display:none;">No history yet.</div>
+      <div class="history-scroll" aria-label="History results">
+        <table>
+          <thead><tr><th style="width:65%;">Input</th><th>Label</th><th>Score</th></tr></thead>
+          <tbody id="histBody"></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="examplesSection" class="panel" style="display:none;">
+      <h3>Examples</h3>
+      <div class="example-grid">
+        <div class="example-card"><code>I love this so much! 😍</code><div class="small">Strong praise + heart-eyes → Positive</div><button class="btn secondary" onclick="useExample('I love this so much! 😍')">Use</button></div>
+        <div class="example-card"><code>I hate this 😢</code><div class="small">Complaint + sad emoji → Negative</div><button class="btn secondary" onclick="useExample('I hate this 😢')">Use</button></div>
+        <div class="example-card"><code>Oh great, just what I needed 😂</code><div class="small">Sarcasm heuristic → Neutral</div><button class="btn secondary" onclick="useExample('Oh great, just what I needed 😂')">Use</button></div>
+        <div class="example-card"><code>I'm not that sad today 😊</code><div class="small">Negation smoothing</div><button class="btn secondary" onclick="useExample(&quot;I'm not that sad today 😊&quot;)">Use</button></div>
+        <div class="example-card"><code>I am so sad 😁</code><div class="small">Conflict rule → Neutral</div><button class="btn secondary" onclick="useExample('I am so sad 😁')">Use</button></div>
+        <div class="example-card"><code>Feeling devastated and heartbroken 😭</code><div class="small">Clearly sad → Negative</div><button class="btn secondary" onclick="useExample('Feeling devastated and heartbroken 😭')">Use</button></div>
+      </div>
+    </section>
+  </main>
+  <div class="footer">Lightweight demo UI • Heuristic fusion (text + emoji) • Toggle dark mode for comfort</div>
+</body>
+</html>
+

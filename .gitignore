@@ -1,4 +1,5 @@
 ﻿.venv/
+.venv_streamlit/
 __pycache__/
 *.pyc
 *.pyo
@@ -9,3 +10,4 @@ downloads/
 test_downloads/
 Image/training/data/
 Text/data/
+ngrok.exe

@@ -19,7 +19,18 @@ def get_emojis_in_sentence(sentence):
     :param sentence:
     :return: emojis
     """
-    emojis = [c for c in sentence if c in emoji_library.UNICODE_EMOJI]
+    # Fallback for older emoji library versions: use unicode ranges
+    import unicodedata
+    emojis = []
+    for c in sentence:
+        # Check if in emoji library first
+        if c in emoji_library.UNICODE_EMOJI:
+            emojis.append(c)
+        # Fallback: check unicode category and common emoji ranges
+        elif ord(c) > 0x1F300:  # Basic emoji range starts around U+1F300
+            cat = unicodedata.category(c)
+            if cat == 'So':  # Symbol, other (includes most emojis)
+                emojis.append(c)
     return emojis
 
 

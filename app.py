@@ -7,10 +7,9 @@ import streamlit as st
 import sys
 import os
 
-# Add project paths
-sys.path.insert(0, os.path.dirname(__file__))
-
-from SentimentAnalysis import load_models, get_sentiments
+import json
+import subprocess
+from pathlib import Path
 import plotly.graph_objects as go
 import pandas as pd
 
@@ -71,11 +70,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize session state
-@st.cache_resource
-def load_sentiment_models():
-    """Load models once and cache them"""
-    return load_models()
-
 if 'history' not in st.session_state:
     st.session_state.history = []
 
@@ -185,6 +179,56 @@ def create_score_breakdown(scores_list, emojis_list, images_list, texts_list):
     
     return fig
 
+# Helper: call CLI sentiment (runs in existing .venv with ML deps)
+def _resolve_backend_python():
+    project_root = Path(__file__).resolve().parent
+    # Prefer project's .venv Python if present; fall back to current interpreter
+    venv_python_path = project_root / ".venv" / "Scripts" / "python.exe"
+    python_exe = str(venv_python_path) if venv_python_path.exists() else sys.executable
+    return python_exe
+
+def _extract_json_from_output(raw_text: str):
+    """Best-effort extraction of the final JSON object from mixed CLI output.
+    Handles extra logs/warnings printed before the JSON.
+    """
+    # Quick path: try direct parse
+    try:
+        return json.loads(raw_text)
+    except Exception:
+        pass
+
+    # Fallback: scan lines for JSON-looking substrings
+    import re
+    candidates = re.findall(r"\{.*\}", raw_text, flags=re.DOTALL)
+    for cand in reversed(candidates):
+        try:
+            return json.loads(cand)
+        except Exception:
+            continue
+    return None
+
+def run_cli_sentiment(text: str, gif_url: str = ""):
+    project_root = Path(__file__).resolve().parent
+    cli_path = str(project_root / "cli_sentiment.py")
+    python_exe = _resolve_backend_python()
+    cmd = [python_exe, cli_path, text]
+    if gif_url:
+        cmd.append(gif_url)
+    try:
+        # Reduce TensorFlow logs; some Keras/TensorFlow messages still print,
+        # so we defensively extract JSON from mixed output.
+        env = os.environ.copy()
+        env["TF_CPP_MIN_LOG_LEVEL"] = "3"
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=False, env=env)
+        raw = out.decode('utf-8', errors='ignore')
+        data = _extract_json_from_output(raw)
+        if isinstance(data, dict) and 'score' in data:
+            return data
+        return {"score": 0.0, "label": "Neutral"}
+    except subprocess.CalledProcessError as e:
+        st.error(f"Analysis error: {e.output.decode('utf-8', errors='ignore')}")
+        return {"score": 0.0, "label": "Neutral"}
+
 # Header
 st.markdown('<div class="main-header">💬 Chat Sentiment Analyzer</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Multi-modal sentiment analysis with text, emoji, and image support</div>', unsafe_allow_html=True)
@@ -208,6 +252,11 @@ with st.sidebar:
     **Image Model:** C3D (3D-CNN)
     - ~75% accuracy on GIFGIF
     """)
+    # Show which Python interpreter the backend CLI uses
+    try:
+        st.caption(f"Backend Python: {_resolve_backend_python()}")
+    except Exception:
+        pass
     
     st.markdown("---")
     
@@ -232,14 +281,8 @@ with st.sidebar:
 tab1, tab2, tab3 = st.tabs(["📝 Analyze", "📊 History", "💡 Examples"])
 
 with tab1:
-    # Load models
-    with st.spinner('Loading models... This may take a moment on first run.'):
-        try:
-            image_model, text_model_ensemble = load_sentiment_models()
-            st.success("✅ Models loaded successfully!")
-        except Exception as e:
-            st.error(f"❌ Error loading models: {str(e)}")
-            st.stop()
+    # No heavy model loads in this process; the CLI handles ML in .venv
+    st.info("Models load on first analysis call via the backend CLI. First run may take a few seconds.")
     
     # Input section
     st.header("Enter Text to Analyze")
@@ -278,38 +321,10 @@ with tab1:
             
             with st.spinner('Analyzing sentiment...'):
                 try:
-                    # Run sentiment analysis
-                    from SentimentAnalysis import parse_media, calculate_scores
-                    from Text.sentiment.TextSentiment import get_texts_sentiment
-                    from Emoji.EmojiSentiment import get_emoji_sentiments
-                    from Image.ImageSentiment import download_gifs, get_gifs_sentiment
-                    
-                    # Parse input
-                    emojis_list, images_list, texts_list = parse_media([full_input])
-                    
-                    # Get sentiment for each component
-                    text_scores = []
-                    emoji_scores = []
-                    image_scores = []
-                    
-                    if texts_list[0]:
-                        text_scores = get_texts_sentiment([texts_list[0]], text_model_ensemble)
-                        texts_list[0] = text_scores[0]
-                    
-                    if emojis_list[0]:
-                        emoji_scores = get_emoji_sentiments([emojis_list[0]])
-                        emojis_list[0] = emoji_scores[0]
-                    
-                    if images_list[0] and image_model is not None:
-                        image_paths = download_gifs([images_list[0]], path="downloads")
-                        if image_paths:
-                            image_scores = get_gifs_sentiment(image_paths, image_model)
-                            images_list[0] = image_scores[0]
-                    
-                    # Calculate combined score
-                    final_scores = calculate_scores(emojis_list, images_list, texts_list)
-                    score = final_scores[0] if final_scores else 0.0
-                    label = get_sentiment_label(score)
+                    # Call backend CLI (uses existing .venv with ML deps)
+                    res = run_cli_sentiment(user_input.strip(), gif_url.strip())
+                    score = float(res.get('score', 0.0))
+                    label = res.get('label') or get_sentiment_label(score)
                     
                     # Add to history
                     st.session_state.history.insert(0, {
@@ -342,8 +357,12 @@ with tab1:
                         )
                     
                     with col2:
+                        # Show component scores if available from CLI
+                        emoji_s = res.get('emoji_sentiment')
+                        image_s = res.get('image_sentiment')
+                        text_s = res.get('text_sentiment')
                         st.plotly_chart(
-                            create_score_breakdown(final_scores, emojis_list, images_list, texts_list),
+                            create_score_breakdown([score], [emoji_s], [image_s], [text_s]),
                             use_container_width=True
                         )
                     
@@ -351,34 +370,28 @@ with tab1:
                     st.markdown("### 📋 Detailed Breakdown")
                     
                     metrics_cols = st.columns(4)
-                    
+
                     with metrics_cols[0]:
                         st.metric(
                             "🎯 Combined Score",
                             f"{score:.3f}",
                             delta=f"{abs(score):.3f}"
                         )
-                    
                     with metrics_cols[1]:
-                        if texts_list[0] is not None:
-                            st.metric(
-                                "📝 Text Score",
-                                f"{texts_list[0]:.3f}"
-                            )
-                    
+                        if text_s is not None:
+                            st.metric("📝 Text Score", f"{float(text_s):.3f}")
+                        else:
+                            st.metric("📝 Text Score", "—")
                     with metrics_cols[2]:
-                        if emojis_list[0] is not None:
-                            st.metric(
-                                "😊 Emoji Score",
-                                f"{emojis_list[0]:.3f}"
-                            )
-                    
+                        if emoji_s is not None:
+                            st.metric("😊 Emoji Score", f"{float(emoji_s):.3f}")
+                        else:
+                            st.metric("😊 Emoji Score", "—")
                     with metrics_cols[3]:
-                        if images_list[0] is not None and images_list[0] != 0.0:
-                            st.metric(
-                                "🖼️ Image Score",
-                                f"{images_list[0]:.3f}"
-                            )
+                        if image_s is not None and float(image_s) != 0.0:
+                            st.metric("🖼️ Image Score", f"{float(image_s):.3f}")
+                        else:
+                            st.metric("🖼️ Image Score", "—")
                     
                     # Display GIF if provided
                     if gif_url.strip():
